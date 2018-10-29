@@ -32,9 +32,6 @@ public class Start {
     			  														 +booktitles[rand.nextInt(6)]+"_"+prices[rand.nextInt(4)]+"_"+eBooks[rand.nextInt(2)]+"_false"+")");
       }
       
-      
-
-
     	List<String> cmd = new Vector<>();
     	cmd.add("-agents");
     	StringBuilder sb = new StringBuilder();

@@ -15,6 +15,8 @@ import jade.domain.DFService;
 import jade.domain.FIPAException;
 import jade.domain.FIPAAgentManagement.DFAgentDescription;
 import jade.domain.FIPAAgentManagement.ServiceDescription;
+
+import java.util.Hashtable;
 import java.util.List;
 import java.util.Vector;
 import java.util.Random;
@@ -26,12 +28,17 @@ import java.util.Random;
 @SuppressWarnings("serial")
 public class BookBuyerAgent extends Agent {
 	private String targetbookTitle;
-	private AID[] sellerAgents = {new AID("seller1", AID.ISLOCALNAME),
-            new AID("seller2", AID.ISLOCALNAME),
-            new AID("seller3", AID.ISLOCALNAME)};
-//	private AID[] sellerAgents;
+//	private AID[] sellerAgents = {new AID("seller1", AID.ISLOCALNAME),
+//            new AID("seller2", AID.ISLOCALNAME),
+//            new AID("seller3", AID.ISLOCALNAME)};
+	private AID[] sellerAgents;
+	private List<String> catalogue;
+	private List<String> purchasedBooks;
 
 	private int noOftargetBooks = 3;
+	private String[] book_list = {"BookA", "BookB", "BookC", "BookD"};
+	private List<String> booktitles = new Vector<>();
+	
 
 	protected void setup() {
 
@@ -39,49 +46,88 @@ public class BookBuyerAgent extends Agent {
 		System.out.println("Hello! Buyer-agent "+getAID().getName()+" is ready.");
 
 		//		System.out.println("I am here");
-
+		
 		Object[] args = getArguments();
-
-
-		//		addBehaviour(new TickerBehaviour(this, 60000){
-		//			protected void onTick(){
-		//				myAgent.addBehaviour(new RequestPerformer());
-		//			}
-		//		});
-
-		if(args!=null && args.length>0){
-			for (int i = 0; i < args.length; i++) {
-				String targetbookTitle = (String) args[i];
-				addBehaviour(new RequestPerformer(targetbookTitle));
-				System.out.println("Trying to buy\t" +targetbookTitle);
+		catalogue = new Vector<>();
+		
+		for(int i=0; i<book_list.length; i++) {
+			catalogue.add(book_list[i]);
+		}
+		
+//		System.out.println("The buyer wants to buy---"+book_list);
+		
+		purchasedBooks = new Vector<>();
+		
+		// Register the book-buying service in the yellow pages
+				DFAgentDescription dfd = new DFAgentDescription();
+				dfd.setName(getAID());
+				ServiceDescription sd = new ServiceDescription();
+				sd.setType("book-buying");
+				sd.setName("JADE-book-trading");
+				dfd.addServices(sd);
+				try {
+					DFService.register(this, dfd);
+				}
+				catch (FIPAException fe) {
+					fe.printStackTrace();
+				}
 				
-				addBehaviour(new TickerBehaviour(this, 60000) {
-					protected void onTick() {
-						// Update the list of seller agents
-						DFAgentDescription template = new DFAgentDescription();
-						ServiceDescription sd = new ServiceDescription();
-						sd.setType("book-selling");
-						template.addServices(sd);
-						try {
-							DFAgentDescription[] result = DFService.search(myAgent, template);
-							sellerAgents = new AID[result.length];
-							for (int i = 0; i < result.length; ++i) {
-								sellerAgents[i] = result[i].getName();
+				Random rand = new Random();
+				
+				while(booktitles.size()< noOftargetBooks){
+					int randomize = rand.nextInt(catalogue.size());
+					boolean isTargetbook = booktitles.contains(catalogue.get(randomize));
+					if (!isTargetbook)
+						booktitles.add(catalogue.get(randomize));
+				
+				}
+
+				// Add a TickerBehaviour for each targetBook
+				for (String i : book_list) {
+					addBehaviour(new TickerBehaviour(this, 4000) {
+						protected void onTick() {
+							System.out.println("#####"+getAID().getLocalName()+" is trying to buy "+i+"######");
+
+							if(purchasedBooks.contains(i)){
+								System.out.println("#####"+getAID().getLocalName()+"  has already purchased  " + i+"#####");
+								System.out.println("Agent"+ getAID().getLocalName()+" bought:");
+								// Check the number of books bought so far
+								if(purchasedBooks.size() == noOftargetBooks){
+									System.out.println("#####"+getAID().getLocalName()+" has purchased " + purchasedBooks.size() + " books"+"#####");
+									// Stop this agent
+									doDelete();
+								}
+								
+
+								// Stop the TickerBehaviour that is trying to buy targetBook
+								stop();
+							}
+							else{
+
+								// Update seller agents
+								DFAgentDescription template = new DFAgentDescription();
+								ServiceDescription sd = new ServiceDescription();
+								sd.setType("book-selling");
+								template.addServices(sd);
+								try {
+									DFAgentDescription [] result = DFService.search(myAgent, template);
+//									System.out.println("Found the following seller agents:");
+									sellerAgents = new AID [result.length];
+									for (int i = 0; i < result.length; ++i) {
+										sellerAgents[i] = result[i].getName();
+//										System.out.println(sellerAgents[i].getName());
+									}
+								}
+								catch (FIPAException fe) {
+									fe.printStackTrace();
+								}
+								// Perform the request
+								myAgent.addBehaviour(new RequestPerformer(targetbookTitle));
+
 							}
 						}
-						catch (FIPAException fe) {
-							fe.printStackTrace();
-						}
-						// Perform the request
-						myAgent.addBehaviour(new RequestPerformer(targetbookTitle));
-					}
-				} );
-			}
-		}
-		else{
-			System.out.println("No book title specified");
-			doDelete();
-		}
+					} );
+				}
 
 
 		try {
@@ -89,33 +135,21 @@ public class BookBuyerAgent extends Agent {
 		} catch (InterruptedException e) {
 			//e.printStackTrace();
 		}
-		//		addBehaviour(new shutdown());
+
 
 	}
 	protected void takeDown() {
+		// Deregister from the yellow pages
+		try {
+			DFService.deregister(this);
+		}
+		catch (FIPAException fe) {
+			fe.printStackTrace();
+		}
 		System.out.println(getAID().getLocalName() + ": Terminating.");
 	}
 
-	// Taken from http://www.rickyvanrijn.nl/2017/08/29/how-to-shutdown-jade-agent-platform-programmatically/
-	private class shutdown extends OneShotBehaviour{
-		public void action() {
-			ACLMessage shutdownMessage = new ACLMessage(ACLMessage.REQUEST);
-			Codec codec = new SLCodec();
-			myAgent.getContentManager().registerLanguage(codec);
-			myAgent.getContentManager().registerOntology(JADEManagementOntology.getInstance());
-			shutdownMessage.addReceiver(myAgent.getAMS());
-			shutdownMessage.setLanguage(FIPANames.ContentLanguage.FIPA_SL);
-			shutdownMessage.setOntology(JADEManagementOntology.getInstance().getName());
-			try {
-				myAgent.getContentManager().fillContent(shutdownMessage,new Action(myAgent.getAID(), new ShutdownPlatform()));
-				myAgent.send(shutdownMessage);
-			}
-			catch (Exception e) {
-				//LOGGER.error(e);
-			}
 
-		}
-	}
 
 	//The request performer behaviour is used by the buyer agent to request seller agents the targer book
 	private class RequestPerformer extends Behaviour {
@@ -198,7 +232,31 @@ public class BookBuyerAgent extends Agent {
 		}
 
 		public boolean done() {
+			if (step == 2 && bestSeller == null) {
+				System.out.println("Attempt failed: "+targetbookTitle+" not available for sale");
+			}
 			return ((step == 2 && bestSeller == null) || step == 4);
+		}
+	}
+	
+	// Taken from http://www.rickyvanrijn.nl/2017/08/29/how-to-shutdown-jade-agent-platform-programmatically/
+	private class shutdown extends OneShotBehaviour{
+		public void action() {
+			ACLMessage shutdownMessage = new ACLMessage(ACLMessage.REQUEST);
+			Codec codec = new SLCodec();
+			myAgent.getContentManager().registerLanguage(codec);
+			myAgent.getContentManager().registerOntology(JADEManagementOntology.getInstance());
+			shutdownMessage.addReceiver(myAgent.getAMS());
+			shutdownMessage.setLanguage(FIPANames.ContentLanguage.FIPA_SL);
+			shutdownMessage.setOntology(JADEManagementOntology.getInstance().getName());
+			try {
+				myAgent.getContentManager().fillContent(shutdownMessage,new Action(myAgent.getAID(), new ShutdownPlatform()));
+				myAgent.send(shutdownMessage);
+			}
+			catch (Exception e) {
+				//LOGGER.error(e);
+			}
+
 		}
 	}
 }

@@ -1,6 +1,7 @@
 package maas.tutorials;
 import jade.content.lang.sl.SLCodec;
 import jade.content.onto.basic.Action;
+import jade.core.AID;
 import jade.core.Agent;
 import jade.core.behaviours.*;
 import jade.domain.DFService;
@@ -19,40 +20,28 @@ import java.util.*;
 
 @SuppressWarnings("serial")
 public class BookSellerAgent extends Agent{
-	//maps the title name to price
-	private Hashtable<String, Integer> catalogue;
+	private AID[] buyers;
+	private Hashtable<String, Integer> catalogue_paperbacks;
+	private Hashtable<String, Integer> catalogue_ebooks;
+	private Hashtable<String, Integer> inventory_catalogue;
 	private ArrayList sellerbookList;
+	private int noOfpaperbacks = 20;
+	private int noOfpaperbackTitle = 2;
+	private int noOfebooks = 2;
+	int[] prices = {1000,200,4000,8000};
+	int[] paperbackcopies = {10,10};
+
+	String[] list_of_books = {"BookA","BookB","BookC","BookD"};
+
+	Random rand = new Random();
 
 	//Agent initializations
 	protected void setup() {
-		//Create the catalogue
-		catalogue = new Hashtable();
 		sellerbookList = new ArrayList();
 		System.out.println("Hello! Seller-agent "+getAID().getName()+" is ready.");
 
-		Object[] args = getArguments();
-
-		if(args!=null && args.length>0){
-
-			for (int i=0; i < args.length; i++) {
-				String book_info = (String) args[i];
-				String[] book_ = book_info.split("_");
-				Hashtable bookCatalogue = new Hashtable();
-				bookCatalogue.put("Title", book_[0]);
-				bookCatalogue.put("Price", Integer.parseInt(book_[1]));
-				bookCatalogue.put("Quantity", Integer.parseInt(book_[2]));
-				bookCatalogue.put("is_paperback", Boolean.parseBoolean(book_[3]));
-				sellerbookList.add(bookCatalogue);
-				catalogue.put(book_[0], Integer.valueOf(book_[1]));
-				//	                catalogue.put("Price", Integer.valueOf(book_[1]));
-
-			}
-			System.out.println("The catalogue of books being sold\t"  + catalogue);
-//			System.out.println("In book list " + sellerbookList);
-		}
-		else {
-			System.out.println("No arguments are available");
-		}
+		initializePaperbackCatalogue();
+		initializeEbookCatalogue();
 
 		// Register the book-selling service in the yellow pages
 		DFAgentDescription dfd = new DFAgentDescription();
@@ -73,6 +62,73 @@ public class BookSellerAgent extends Agent{
 
 		//Add the behaviour serving purchase orders from buyer agents
 		addBehaviour(new PurchaseOrdersServer());
+
+		addBehaviour(new TickerBehaviour(this, 4000){
+			protected void onTick(){
+				// Update the list of buyer agents
+				DFAgentDescription template = new DFAgentDescription();
+				ServiceDescription sd = new ServiceDescription();
+				sd.setType("book-buying");
+				template.addServices(sd);
+				try{
+					DFAgentDescription[] result = DFService.search(myAgent, template);
+					buyers = new AID[result.length];
+					for (int i = 0; i < result.length; ++i){
+						buyers[i] = result[i].getName();
+					}
+				} catch(FIPAException fe){
+					fe.printStackTrace();
+				}
+
+				if (buyers.length == 0){
+					System.out.println(getAID().getName() +" No buyers");
+					addBehaviour(new shutdown());
+				}
+			}
+		});
+	}
+
+	private void initializePaperbackCatalogue() {
+		catalogue_paperbacks = new Hashtable();
+		inventory_catalogue = new Hashtable();
+		
+        List<String> paperback_list = new Vector<>();
+		List<String> paperBacks = new Vector<>();
+		List<Integer> paperbackPrice = new Vector<>();
+		int quantity = noOfpaperbacks/noOfpaperbackTitle;
+		
+		for(int i=2; i<4;i++) {
+        	paperback_list.add(list_of_books[i]);
+		} 
+
+
+		for(int i=0; i<paperback_list.size(); i++) {
+			catalogue_paperbacks.put(paperback_list.get(i),prices[rand.nextInt(4)]);
+			inventory_catalogue.put(paperback_list.get(i), paperbackcopies[rand.nextInt(4)]);
+		}
+
+	}
+
+	private void initializeEbookCatalogue() {
+		catalogue_ebooks = new Hashtable();
+		List<String> ebooks_list = new Vector<>();
+		List<String> ebooks = new Vector<>();
+		List<Integer> ebooksPrice = new Vector<>();
+		
+		for(int i=0;i<ebooks_list.size();i++) {
+        	catalogue_ebooks.put(ebooks_list.get(i), prices[rand.nextInt(4)]);
+        }
+
+		ebooks.add("BookC");
+		ebooksPrice.add(rand.nextInt(100));
+		ebooks.add("BookD");
+		ebooksPrice.add(rand.nextInt(100));
+
+
+		for(int i=0; i<=ebooks_list.size(); i++) {
+			catalogue_ebooks.put(ebooks.get(i),ebooksPrice.get(i));
+		}
+
 	}
 	//Put agent clean up operations here
 	protected void takeDown() {
@@ -86,37 +142,38 @@ public class BookSellerAgent extends Agent{
 		//Printout a dismissal message
 		System.out.println("Seller agent"+getAID().getName()+"terminating.");
 	}
-	/*
-	 * This is invoked by the GUI when the user adds a new book for sale
-	 */
-//	public void updateCatalogue(final String title,final int price) {
-//		addBehaviour(new OneShotBehaviour() {
-//			public void action() {
-//				catalogue.put(title, new Integer(price));
-//			}
-//		});
-//	}
 
 	private class OfferRequestsServer extends CyclicBehaviour{
 		public void action() {
-//			System.out.println("In the offer request*****************************");
+						System.out.println("In the offer request*****************************");
 			MessageTemplate mt = MessageTemplate.MatchPerformative(ACLMessage.CFP);
 			ACLMessage msg = myAgent.receive();
 			if(msg!= null) {
-				//System.out.println("Message is not null-------------------------------");
+				System.out.println("Recieved message-------------------------------");
 				//Message received. Process it
 				String title = msg.getContent();
 				ACLMessage reply = msg.createReply();
 
-				Integer price = (Integer) catalogue.get(title);
-				System.out.println("Got the price for*****"+title+":"+price);
-				if(price != null) {
+				if(catalogue_paperbacks.containsKey(title)) {
+					Integer price = (Integer) catalogue_paperbacks.get(title);
+					Integer quantity = (Integer) inventory_catalogue.get(title);
+
+					//check for the quantity
+					if(quantity>0) {
+						//The requested book is available for sale. Reply with the price
+						reply.setPerformative(ACLMessage.PROPOSE);
+						reply.setContent(String.valueOf(price.intValue()));
+					}
+
+				}
+
+				else if(catalogue_ebooks.containsKey(title)) {
+					Integer price = (Integer) catalogue_ebooks.get(title);
 					//The requested book is available for sale. Reply with the price
 					reply.setPerformative(ACLMessage.PROPOSE);
 					reply.setContent(String.valueOf(price.intValue()));
-				}
+				}			
 				else {
-
 					//The requested book is NOT available for sale.
 					reply.setPerformative(ACLMessage.REFUSE);
 					reply.setContent("not-available");
@@ -148,9 +205,22 @@ public class BookSellerAgent extends Agent{
 				String title = msg.getContent();
 				ACLMessage reply = msg.createReply();
 
-				Integer price = (Integer) catalogue.remove(title);
+				Integer price = (Integer) catalogue_paperbacks.remove(title);
+				
+				if(catalogue_paperbacks.containsKey(title)) {
+					Integer price_ = (Integer) catalogue_paperbacks.get(title);
+					Integer quantity = (Integer) inventory_catalogue.get(title);
+					//check for the quantity
+					if(quantity>0) {
+						//The requested book is available for sale. Reply with the price
+						reply.setPerformative(ACLMessage.INFORM);
+						System.out.println(title+" sold to agent "+msg.getSender().getName());
+						//decrement the quantity
+						inventory_catalogue.put(title, quantity--);
+					}
 
-				if (price != null) {
+				}
+				else if(catalogue_ebooks.containsKey(title)){
 					reply.setPerformative(ACLMessage.INFORM);
 					System.out.println(title+" sold to agent "+msg.getSender().getName());
 				}
@@ -168,7 +238,7 @@ public class BookSellerAgent extends Agent{
 		// End of inner class PurchaseOrderServer
 
 	}		
-	
+
 	// Reference: http://www.rickyvanrijn.nl/2017/08/29/how-to-shutdown-jade-agent-platform-programmatically/
 	private class shutdown extends OneShotBehaviour{
 		public void action() {
